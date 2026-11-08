@@ -806,7 +806,9 @@ namespace Microsoft.CodeAnalysis.Diagnostics
                     {
                         builder.Free();
 
-                        if (ReferenceEquals(compilation, _compilation))
+                        // PERF: The root "_compilation" is reused for single-file compiler analyzer analysis and its event queue
+                        // is never consumed, so drain the events generated while binding to avoid rooting semantic models.
+                        if (analysisScope.IsSingleFileAnalysisForCompilerAnalyzer)
                         {
                             while (compilation.EventQueue!.TryDequeue(out _))
                             {
