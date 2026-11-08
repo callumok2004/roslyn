@@ -5,7 +5,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
 
-    <ServerGarbageCollection>true</ServerGarbageCollection>
+    <ServerGarbageCollection>false</ServerGarbageCollection>
 
     <!-- This project is not packed as a .NET tool. The roslyn-language-server thin client is the
          tool entry point and package; it bundles this project's full published output side-by-side and
