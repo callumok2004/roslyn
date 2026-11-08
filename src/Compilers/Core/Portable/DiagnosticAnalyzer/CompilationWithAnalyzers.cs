@@ -805,6 +805,13 @@ namespace Microsoft.CodeAnalysis.Diagnostics
                     finally
                     {
                         builder.Free();
+
+                        if (ReferenceEquals(compilation, _compilation))
+                        {
+                            while (compilation.EventQueue!.TryDequeue(out _))
+                            {
+                            }
+                        }
                     }
                 }
             }
