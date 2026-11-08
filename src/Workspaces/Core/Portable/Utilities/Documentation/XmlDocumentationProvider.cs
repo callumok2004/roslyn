@@ -9,6 +9,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
+using System.Text;
 using System.Threading;
 using System.Xml;
 using Roslyn.Utilities;
@@ -21,7 +22,7 @@ namespace Microsoft.CodeAnalysis;
 public abstract class XmlDocumentationProvider : DocumentationProvider
 {
     private readonly SemaphoreSlim _gate = new(initialCount: 1);
-    private Dictionary<string, string> _docComments;
+    private Dictionary<string, byte[]> _docComments;
 
     /// <summary>
     /// Gets the source stream for the XML document.
@@ -65,7 +66,7 @@ public abstract class XmlDocumentationProvider : DocumentationProvider
                     using (var stream = GetSourceStream(cancellationToken))
                     using (var xmlReader = XmlReader.Create(stream, s_xmlSettings))
                     {
-                        var comments = new Dictionary<string, string>();
+                        var comments = new Dictionary<string, byte[]>();
                         while (xmlReader.Read())
                         {
                             if (xmlReader is { NodeType: XmlNodeType.Element, Name: "member" })
@@ -75,7 +76,7 @@ public abstract class XmlDocumentationProvider : DocumentationProvider
                                 {
                                     // Read the entire <member> element as a string
                                     var memberXml = xmlReader.ReadOuterXml();
-                                    comments[name] = memberXml;
+                                    comments[name] = Encoding.UTF8.GetBytes(memberXml);
                                 }
                             }
                         }
@@ -90,7 +91,7 @@ public abstract class XmlDocumentationProvider : DocumentationProvider
             }
         }
 
-        return _docComments.TryGetValue(documentationMemberID, out var docComment) ? docComment : "";
+        return _docComments.TryGetValue(documentationMemberID, out var docComment) ? Encoding.UTF8.GetString(docComment) : "";
     }
 
     private static readonly XmlReaderSettings s_xmlSettings = new()
