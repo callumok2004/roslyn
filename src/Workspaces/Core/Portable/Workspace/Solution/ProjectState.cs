@@ -411,8 +411,11 @@ internal sealed partial class ProjectState : IComparable<ProjectState>
 
     internal sealed class ProjectAnalyzerConfigOptionsProvider(ProjectState projectState) : AnalyzerConfigOptionsProvider
     {
+        private readonly WeakReference<ProjectState> _projectState = new(projectState);
+        private readonly AnalyzerConfigOptionsCache _analyzerConfigOptionsCache = projectState._analyzerConfigOptionsCache;
+
         private AnalyzerConfigOptionsCache.Value GetCache()
-            => projectState._analyzerConfigOptionsCache.Lazy.GetValue(CancellationToken.None);
+            => _analyzerConfigOptionsCache.Lazy.GetValue(CancellationToken.None);
 
         public override AnalyzerConfigOptions GlobalOptions
             => GetCache().GlobalConfigOptions.ConfigOptionsWithoutFallback;
@@ -421,21 +424,28 @@ internal sealed partial class ProjectState : IComparable<ProjectState>
         {
             var documentId = DocumentState.GetDocumentIdForTree(tree);
             var cache = GetCache();
-            if (documentId != null && projectState.DocumentStates.TryGetState(documentId, out var documentState))
+            if (documentId != null && _projectState.TryGetTarget(out var projectState) && projectState.DocumentStates.TryGetState(documentId, out var documentState))
             {
-                return GetOptions(cache, documentState);
+                return GetOptions(cache, documentState, projectState);
             }
+
+            if (documentId is { IsSourceGenerated: true })
+                return StructuredAnalyzerConfigOptions.Empty;
 
             return GetOptionsForSourcePath(cache, tree.FilePath);
         }
 
         internal async ValueTask<StructuredAnalyzerConfigOptions> GetOptionsAsync(DocumentState documentState, CancellationToken cancellationToken)
         {
-            var cache = await projectState._analyzerConfigOptionsCache.Lazy.GetValueAsync(cancellationToken).ConfigureAwait(false);
-            return GetOptions(cache, documentState);
+            var cache = await _analyzerConfigOptionsCache.Lazy.GetValueAsync(cancellationToken).ConfigureAwait(false);
+            return _projectState.TryGetTarget(out var projectState)
+                ? GetOptions(cache, documentState, projectState)
+                : documentState.Id.IsSourceGenerated || string.IsNullOrEmpty(documentState.FilePath)
+                    ? StructuredAnalyzerConfigOptions.Empty
+                    : GetOptionsForSourcePath(cache, documentState.FilePath);
         }
 
-        private StructuredAnalyzerConfigOptions GetOptions(in AnalyzerConfigOptionsCache.Value cache, DocumentState documentState)
+        private static StructuredAnalyzerConfigOptions GetOptions(in AnalyzerConfigOptionsCache.Value cache, DocumentState documentState, ProjectState projectState)
         {
             var filePath = GetEffectiveFilePath(documentState, projectState);
             return filePath == null
