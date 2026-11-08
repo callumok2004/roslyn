@@ -40,6 +40,7 @@ internal sealed class LanguageServerWorkspaceFactory : ILspService, IHostWorkspa
         // as well as anything coming from extensions.
         _solutionLevelAnalyzerPaths = new DirectoryInfo(AppContext.BaseDirectory).GetFiles("*.dll")
             .Where(f => f.Name.StartsWith("Microsoft.CodeAnalysis.", StringComparison.Ordinal) && !f.Name.Contains("LanguageServer", StringComparison.Ordinal))
+            .Where(f => Environment.GetEnvironmentVariable("FORGE_ROSLYN_RAZOR") == "1" || !f.Name.Contains("Razor", StringComparison.OrdinalIgnoreCase))
             .Select(f => f.FullName)
             .Concat(extensionManager.ExtensionAssemblyPaths)
             .ToImmutableArray();
