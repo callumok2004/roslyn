@@ -101,9 +101,13 @@ internal sealed class LanguageServerExportProviderBuilder : ExportProviderBuilde
 
     private static IEnumerable<string> FindMefAssemblies(string baseDirectory)
     {
+        var razor = Environment.GetEnvironmentVariable("FORGE_ROSLYN_RAZOR") == "1";
         foreach (var file in Directory.EnumerateFiles(baseDirectory, "*.dll"))
         {
             var fileName = Path.GetFileName(file);
+            if (!razor && fileName.Contains("Razor", StringComparison.OrdinalIgnoreCase))
+                continue;
+
             if ((fileName.StartsWith("Microsoft.CodeAnalysis", StringComparison.OrdinalIgnoreCase) ||
                  fileName.StartsWith("Microsoft.ServiceHub", StringComparison.OrdinalIgnoreCase) ||
                  s_dllsToIncludeInMef.Contains(fileName)) &&
