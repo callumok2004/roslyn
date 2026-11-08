@@ -112,8 +112,7 @@ internal static class LanguageServerCommandLine
         {
             Description = "Controls when source generators are executed.",
             Required = false,
-            // Balanced mode requires additional client side support (to trigger refreshes), so by default run in automatic to ensure tool scenarios without client support run generators.
-            DefaultValueFactory = _ => SourceGeneratorExecutionPreference.Automatic,
+            DefaultValueFactory = _ => SourceGeneratorExecutionPreference.Balanced,
         };
 
         var clientProcessIdOption = new Option<int?>("--clientProcessId")
