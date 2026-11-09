@@ -105,12 +105,12 @@ internal sealed class FileIdentifier
 
     public static FileIdentifier Create(SyntaxTree syntaxTree, SourceReferenceResolver? resolver)
     {
-        if (s_byTree.TryGetValue(syntaxTree, out var entry) && Equals(entry.Resolver, resolver))
-            return entry.Identifier;
+        if (!s_byTree.TryGetValue(syntaxTree, out var entry))
+            entry = s_byTree.GetValue(syntaxTree, tree => new TreeEntry(resolver, new FileIdentifier(tree.GetNormalizedPath(resolver))));
 
-        var identifier = new FileIdentifier(syntaxTree.GetNormalizedPath(resolver));
-        s_byTree.AddOrUpdate(syntaxTree, new TreeEntry(resolver, identifier));
-        return identifier;
+        return Equals(entry.Resolver, resolver)
+            ? entry.Identifier
+            : new FileIdentifier(syntaxTree.GetNormalizedPath(resolver));
     }
 
     public static FileIdentifier Create(string normalizedFilePath)
