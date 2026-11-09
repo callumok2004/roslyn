@@ -454,8 +454,11 @@ namespace Microsoft.CodeAnalysis.CSharp.Symbols
 
         internal static FlowAnalysisAnnotations GetFlowAnalysisAnnotations(this PropertySymbol property)
         {
-            var annotations = property.GetOwnOrInheritedGetMethod()?.ReturnTypeFlowAnalysisAnnotations ?? FlowAnalysisAnnotations.None;
-            if (property.GetOwnOrInheritedSetMethod()?.Parameters.Last().FlowAnalysisAnnotations is { } setterAnnotations)
+            // Annotations come from the definition's attributes; reading them through a substituted property
+            // would construct substituted accessors and parameters on every call.
+            var definition = property.OriginalDefinition;
+            var annotations = definition.GetOwnOrInheritedGetMethod()?.ReturnTypeFlowAnalysisAnnotations ?? FlowAnalysisAnnotations.None;
+            if (definition.GetOwnOrInheritedSetMethod()?.Parameters.Last().FlowAnalysisAnnotations is { } setterAnnotations)
             {
                 annotations |= setterAnnotations;
             }
