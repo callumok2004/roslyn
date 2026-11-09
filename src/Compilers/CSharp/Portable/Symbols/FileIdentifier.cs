@@ -4,7 +4,9 @@
 
 using System.Collections.Immutable;
 using System.Diagnostics.CodeAnalysis;
+using System.Runtime.CompilerServices;
 using System.Text;
+using System.Threading;
 using Microsoft.CodeAnalysis.CSharp.Symbols;
 using Microsoft.CodeAnalysis.Text;
 
@@ -35,6 +37,18 @@ internal sealed class FileIdentifier
         _filePath = string.Empty;
     }
 
+    private sealed class TreeEntry(SourceReferenceResolver? resolver, FileIdentifier identifier)
+    {
+        public readonly SourceReferenceResolver? Resolver = resolver;
+        public readonly FileIdentifier Identifier = identifier;
+    }
+
+    /// <summary>
+    /// A binder factory is created per tree for every compilation and semantic model, so without sharing, the
+    /// same path is normalized and hashed again each time a file-local type is bound.
+    /// </summary>
+    private static readonly ConditionalWeakTable<SyntaxTree, TreeEntry> s_byTree = new();
+
     [MemberNotNull(nameof(_data))]
     private void EnsureInitialized()
     {
@@ -55,7 +69,7 @@ internal sealed class FileIdentifier
 
             var displayFilePath = GeneratedNames.GetDisplayFilePath(_filePath);
 
-            _data = new FileIdentifierData(encoderFallbackErrorMessage, displayFilePath, hash);
+            Interlocked.CompareExchange(ref _data, new FileIdentifierData(encoderFallbackErrorMessage, displayFilePath, hash), null);
         }
     }
 
@@ -90,7 +104,14 @@ internal sealed class FileIdentifier
     }
 
     public static FileIdentifier Create(SyntaxTree syntaxTree, SourceReferenceResolver? resolver)
-        => new FileIdentifier(syntaxTree.GetNormalizedPath(resolver));
+    {
+        if (s_byTree.TryGetValue(syntaxTree, out var entry) && Equals(entry.Resolver, resolver))
+            return entry.Identifier;
+
+        var identifier = new FileIdentifier(syntaxTree.GetNormalizedPath(resolver));
+        s_byTree.AddOrUpdate(syntaxTree, new TreeEntry(resolver, identifier));
+        return identifier;
+    }
 
     public static FileIdentifier Create(string normalizedFilePath)
         => new FileIdentifier(normalizedFilePath);
