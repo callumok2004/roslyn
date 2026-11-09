@@ -2292,7 +2292,9 @@ namespace Microsoft.CodeAnalysis.CSharp
                 }
             }
 
-            var method = GetReadMethod(property);
+            // Only the accessor's kind, 'this' parameter and IsExtern are used, which match the definition's;
+            // a substituted property would construct a new substituted accessor on every access.
+            var method = GetReadMethod(property.OriginalDefinition);
             VisitReceiverBeforeCall(node.ReceiverOpt, method);
             VisitReceiverAfterCall(node.ReceiverOpt, method);
             return null;
