@@ -3,6 +3,7 @@
 // See the LICENSE file in the project root for more information.
 
 using System;
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.CompilerServices;
@@ -19,6 +20,12 @@ namespace Microsoft.CodeAnalysis;
 public class FileTextLoader : TextLoader
 {
     private static readonly ConditionalWeakTable<Type, StrongBox<bool>> s_isObsoleteCreateTextOverriden = new();
+
+    /// <summary>
+    /// The most recent text loaded for each path. A file linked into several projects is loaded once per project;
+    /// identical loads share one immutable <see cref="SourceText"/> instead of each keeping its own copy.
+    /// </summary>
+    private static readonly ConcurrentDictionary<string, WeakReference<SourceText>> s_sharedTexts = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     /// Absolute path of the file.
@@ -224,6 +231,28 @@ public class FileTextLoader : TextLoader
             throw new IOException(message);
         }
 
+        return ShareText(textAndVersion);
+    }
+
+    private TextAndVersion ShareText(TextAndVersion textAndVersion)
+    {
+        var text = textAndVersion.Text;
+        var weak = s_sharedTexts.GetOrAdd(Path, _ => new WeakReference<SourceText>(text));
+        if (weak.TryGetTarget(out var shared))
+        {
+            if (shared == text)
+                return textAndVersion;
+
+            if (shared.Length == text.Length &&
+                shared.ChecksumAlgorithm == text.ChecksumAlgorithm &&
+                Equals(shared.Encoding, text.Encoding) &&
+                shared.ContentEquals(text))
+            {
+                return TextAndVersion.Create(shared, textAndVersion.Version, textAndVersion.FilePath);
+            }
+        }
+
+        weak.SetTarget(text);
         return textAndVersion;
     }
 
