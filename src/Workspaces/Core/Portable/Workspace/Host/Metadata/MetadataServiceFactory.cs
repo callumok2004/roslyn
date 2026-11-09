@@ -45,11 +45,14 @@ internal sealed class MetadataServiceFactory() : IWorkspaceServiceFactory
 
             try
             {
-                // Files in the SDK packs and the NuGet package cache never change, so they can be read in place
-                // through a mapped view. Anything else may be rebuilt while referenced, so it's still copied.
-                if (properties.Kind == MetadataImageKind.Assembly && ImmutableReferenceLocations.Contains(path))
+                // Read references through a mapped view instead of copying the whole image into private memory.
+                // Files in the SDK packs and the NuGet package cache never change, so they're mapped in place.
+                // Anything else may be rebuilt while referenced, so a snapshot copy is mapped instead and the
+                // original stays free to be overwritten.
+                if (properties.Kind == MetadataImageKind.Assembly &&
+                    (ImmutableReferenceLocations.Contains(path) ? path : ReferenceSnapshots.TryCreate(path)) is { } mappedPath)
                 {
-                    var module = ModuleMetadata.CreateFromStream(new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete));
+                    var module = ModuleMetadata.CreateFromStream(new FileStream(mappedPath, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete));
                     if (module.GetModuleNames().IsEmpty)
                         return AssemblyMetadata.Create(module).GetReference(documentationProvider, properties.Aliases, properties.EmbedInteropTypes, path);
 
@@ -62,6 +65,81 @@ internal sealed class MetadataServiceFactory() : IWorkspaceServiceFactory
             {
                 // Store failed references in the cache so that the behavior stays consistent once we observe the failure.
                 return new ThrowingExecutableReference(path, properties, documentationProvider, e);
+            }
+        }
+
+        /// <summary>
+        /// Per-process snapshot copies of references that may change on disk. Each server process owns its own
+        /// folder, and folders left behind by processes that have exited are removed the first time it's used.
+        /// </summary>
+        private static class ReferenceSnapshots
+        {
+            private static readonly Lazy<string?> s_directory = new(CreateDirectory);
+            private static int s_next;
+
+            public static string? TryCreate(string path)
+            {
+                if (s_directory.Value is not { } directory)
+                    return null;
+
+                try
+                {
+                    var snapshot = Path.Combine(directory, System.Threading.Interlocked.Increment(ref s_next).ToString() + Path.GetExtension(path));
+                    File.Copy(path, snapshot, overwrite: true);
+                    return snapshot;
+                }
+                catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+                {
+                    return null;
+                }
+            }
+
+            private static string? CreateDirectory()
+            {
+                try
+                {
+                    var root = Path.Combine(Path.GetTempPath(), "roslyn-reference-snapshots");
+                    Directory.CreateDirectory(root);
+
+                    foreach (var stale in Directory.EnumerateDirectories(root))
+                    {
+                        if (int.TryParse(Path.GetFileName(stale), out var owner) && IsRunning(owner))
+                            continue;
+
+                        try
+                        {
+                            Directory.Delete(stale, recursive: true);
+                        }
+                        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+                        {
+                        }
+                    }
+
+#if NET
+                    var directory = Path.Combine(root, Environment.ProcessId.ToString());
+#else
+                    var directory = Path.Combine(root, System.Diagnostics.Process.GetCurrentProcess().Id.ToString());
+#endif
+                    Directory.CreateDirectory(directory);
+                    return directory;
+                }
+                catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+                {
+                    return null;
+                }
+            }
+
+            private static bool IsRunning(int processId)
+            {
+                try
+                {
+                    using var process = System.Diagnostics.Process.GetProcessById(processId);
+                    return !process.HasExited;
+                }
+                catch (Exception e) when (e is ArgumentException or InvalidOperationException or System.ComponentModel.Win32Exception)
+                {
+                    return false;
+                }
             }
         }
 
