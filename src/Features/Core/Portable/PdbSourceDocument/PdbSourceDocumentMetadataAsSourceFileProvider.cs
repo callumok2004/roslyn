@@ -134,9 +134,8 @@ internal sealed class PdbSourceDocumentMetadataAsSourceFileProvider(
                 // Now that we have the right DLL, we need to look up the symbol in this DLL, because the one
                 // we have is from the reference assembly. To do this we create an empty compilation,
                 // add our DLL as a reference, and use SymbolKey to map the type across.
-                var documentationProvider = sourceWorkspace.Services.GetRequiredService<IDocumentationProviderService>();
-                var dllReference = IOUtilities.PerformIO(() => MetadataReference.CreateFromFile(dllPath, documentation: documentationProvider.GetDocumentationProvider(dllPath)));
-                if (dllReference is null)
+                using var dllMetadata = IOUtilities.PerformIO(() => AssemblyMetadata.CreateFromFile(dllPath));
+                if (dllMetadata is null)
                 {
                     _logger?.Log(FeaturesResources.Could_not_find_implementation_of_symbol_0, symbolToFind.MetadataName);
                     return null;
@@ -145,7 +144,7 @@ internal sealed class PdbSourceDocumentMetadataAsSourceFileProvider(
                 var compilationFactory = sourceProject.Services.GetRequiredService<ICompilationFactoryService>();
                 var tmpCompilation = compilationFactory
                     .CreateCompilation("tmp", compilationFactory.GetDefaultCompilationOptions())
-                    .AddReferences(dllReference);
+                    .AddReferences(dllMetadata.GetReference(filePath: dllPath));
 
                 var key = SymbolKey.Create(symbolToFind, cancellationToken);
                 var resolution = key.Resolve(tmpCompilation, ignoreAssemblyKey: true, cancellationToken);
