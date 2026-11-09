@@ -37,6 +37,12 @@ namespace Microsoft.CodeAnalysis.Diagnostics
         private readonly AnalysisResultBuilder _analysisResultBuilder;
 
         /// <summary>
+        /// The tree whose semantic model is still cached on <see cref="_compilation"/> from the last single-file
+        /// compiler analysis; released when analysis moves to a different tree.
+        /// </summary>
+        private SyntaxTree? _lastCompilerAnalysisTree;
+
+        /// <summary>
         /// Set of exception diagnostics reported for exceptions thrown by the analyzers.
         /// </summary>
         private readonly ConcurrentSet<Diagnostic> _exceptionDiagnostics = new ConcurrentSet<Diagnostic>();
@@ -813,6 +819,14 @@ namespace Microsoft.CodeAnalysis.Diagnostics
                             while (compilation.EventQueue!.TryDequeue(out _))
                             {
                             }
+
+                            // The root compilation's caching semantic model provider is never told a tree is complete in
+                            // single-file analysis, so it would keep a fully bound model for every tree ever analyzed. Keep
+                            // the most recent tree's model for repeated requests in the same file and release the previous one.
+                            var tree = analysisScope.FilterFileOpt?.SourceTree;
+                            var previous = Interlocked.Exchange(ref _lastCompilerAnalysisTree, tree);
+                            if (previous != null && previous != tree)
+                                CachingSemanticModelProvider.Instance.ClearCache(previous, compilation);
                         }
                     }
                 }
