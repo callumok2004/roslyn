@@ -37,6 +37,7 @@ namespace Microsoft.CodeAnalysis.CSharp
         private readonly PEModuleBuilder? _moduleBeingBuiltOpt; // Null if compiling for diagnostics
         private readonly Predicate<Symbol>? _filterOpt;         // If not null, limit analysis to specific symbols
         private readonly SynthesizedEntryPointSymbol.AsyncForwardEntryPoint? _entryPointOpt;
+        private readonly Predicate<SyntaxTree>? _cacheBoundTreeFilterOpt; // If not null, only cache bound trees for analyzers in matching trees
 
         private DebugDocumentProvider? _lazyDebugDocumentProvider;
 
@@ -85,7 +86,8 @@ namespace Microsoft.CodeAnalysis.CSharp
 
         // Internal for testing only.
         internal MethodCompiler(CSharpCompilation compilation, PEModuleBuilder? moduleBeingBuiltOpt, bool emittingPdb, bool hasDeclarationErrors, bool emitMethodBodies,
-            BindingDiagnosticBag diagnostics, Predicate<Symbol>? filterOpt, SynthesizedEntryPointSymbol.AsyncForwardEntryPoint? entryPointOpt, CancellationToken cancellationToken)
+            BindingDiagnosticBag diagnostics, Predicate<Symbol>? filterOpt, SynthesizedEntryPointSymbol.AsyncForwardEntryPoint? entryPointOpt, CancellationToken cancellationToken,
+            Predicate<SyntaxTree>? cacheBoundTreeFilterOpt = null)
         {
             Debug.Assert(compilation != null);
             Debug.Assert(diagnostics != null);
@@ -99,6 +101,7 @@ namespace Microsoft.CodeAnalysis.CSharp
             _diagnostics = diagnostics;
             _filterOpt = filterOpt;
             _entryPointOpt = entryPointOpt;
+            _cacheBoundTreeFilterOpt = cacheBoundTreeFilterOpt;
 
             _hasDeclarationErrors = hasDeclarationErrors;
             SetGlobalErrorIfTrue(hasDeclarationErrors);
@@ -114,7 +117,8 @@ namespace Microsoft.CodeAnalysis.CSharp
             bool emitMethodBodies,
             BindingDiagnosticBag diagnostics,
             Predicate<Symbol>? filterOpt,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            Predicate<SyntaxTree>? cacheBoundTreeFilterOpt = null)
         {
             Debug.Assert(compilation != null);
             Debug.Assert(diagnostics != null);
@@ -148,7 +152,8 @@ namespace Microsoft.CodeAnalysis.CSharp
                 diagnostics,
                 filterOpt,
                 entryPoint as SynthesizedEntryPointSymbol.AsyncForwardEntryPoint,
-                cancellationToken);
+                cancellationToken,
+                cacheBoundTreeFilterOpt);
 
             if (compilation.Options.ConcurrentBuild)
             {
@@ -1174,7 +1179,8 @@ namespace Microsoft.CodeAnalysis.CSharp
                             SyntaxTreeSemanticModel semanticModelWithCachedBoundNodes = null;
                             if (body != null &&
                                 forSemanticModel.Syntax is { } semanticModelSyntax &&
-                                _compilation.SemanticModelProvider is CachingSemanticModelProvider cachingSemanticModelProvider)
+                                _compilation.SemanticModelProvider is CachingSemanticModelProvider cachingSemanticModelProvider &&
+                                _cacheBoundTreeFilterOpt?.Invoke(body.Syntax.SyntaxTree) != false)
                             {
                                 var syntax = body.Syntax;
                                 semanticModelWithCachedBoundNodes = (SyntaxTreeSemanticModel)cachingSemanticModelProvider.GetSemanticModel(syntax.SyntaxTree, _compilation);
