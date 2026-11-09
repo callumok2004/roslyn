@@ -3264,8 +3264,9 @@ namespace Microsoft.CodeAnalysis.CSharp
             {
                 Debug.Assert(reportUnusedUsings);
 
-                // Simply compile the world
-                compileMethodBodiesAndDocComments(filterTree: null, filterSpan: null, bindingDiagnostics, cancellationToken);
+                // Simply compile the world. Only the target tree's compilation events are consumed, so only cache bound
+                // trees for analyzers in that tree; the rest are compiled just to record usage of usings.
+                compileMethodBodiesAndDocComments(filterTree: null, filterSpan: null, bindingDiagnostics, cancellationToken, cacheBoundTreeFilter: t => t == tree);
                 _usageOfUsingsRecordedInTrees = null;
             }
             else
@@ -3297,7 +3298,7 @@ namespace Microsoft.CodeAnalysis.CSharp
 
                         if (!trackingSet.Contains(otherTree))
                         {
-                            compileMethodBodiesAndDocComments(filterTree: otherTree, filterSpan: null, discarded, cancellationToken);
+                            compileMethodBodiesAndDocComments(filterTree: otherTree, filterSpan: null, discarded, cancellationToken, cacheBoundTreeFilter: static _ => false);
                             registeredUsageOfUsingsInTree(otherTree);
                             discarded.DiagnosticBag.Clear();
                         }
@@ -3353,7 +3354,7 @@ namespace Microsoft.CodeAnalysis.CSharp
                 }
             }
 
-            void compileMethodBodiesAndDocComments(SyntaxTree? filterTree, TextSpan? filterSpan, BindingDiagnosticBag bindingDiagnostics, CancellationToken cancellationToken)
+            void compileMethodBodiesAndDocComments(SyntaxTree? filterTree, TextSpan? filterSpan, BindingDiagnosticBag bindingDiagnostics, CancellationToken cancellationToken, Predicate<SyntaxTree>? cacheBoundTreeFilter = null)
             {
                 MethodCompiler.CompileMethodBodies(
                                 compilation: this,
@@ -3363,7 +3364,8 @@ namespace Microsoft.CodeAnalysis.CSharp
                                 emitMethodBodies: false,
                                 diagnostics: bindingDiagnostics,
                                 filterOpt: filterTree is object ? (Predicate<Symbol>?)(s => IsDefinedOrImplementedInSourceTree(s, filterTree, filterSpan)) : (Predicate<Symbol>?)null,
-                                cancellationToken: cancellationToken);
+                                cancellationToken: cancellationToken,
+                                cacheBoundTreeFilterOpt: cacheBoundTreeFilter);
 
                 DocumentationCommentCompiler.WriteDocumentationCommentXml(this, null, null, bindingDiagnostics, cancellationToken, filterTree, filterSpan);
             }
