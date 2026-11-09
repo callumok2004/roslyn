@@ -1446,7 +1446,9 @@ namespace Microsoft.CodeAnalysis.CSharp
             {
                 WriteArgument(receiverOpt, RefKind.Ref, method: null);
             }
-            else if (method.TryGetThisParameter(out var thisParameter)
+            // The original definition's 'this' has the same ref kind and immutability, and is cached, whereas
+            // a substituted method allocates a new 'this' parameter on every call.
+            else if (method.OriginalDefinition.TryGetThisParameter(out var thisParameter)
                 && thisParameter is object
                 && !TypeIsImmutable(thisParameter.Type))
             {
