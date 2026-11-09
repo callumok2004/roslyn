@@ -2496,7 +2496,8 @@ namespace Microsoft.CodeAnalysis.CSharp
             bool useLegacyWarnings,
             AssignmentKind assignmentKind = AssignmentKind.Assignment,
             ParameterSymbol? parameterOpt = null,
-            Location? location = null)
+            Location? location = null,
+            SyntaxNode? locationSyntaxOpt = null)
         {
             // Callers should apply any conversions before calling this method
             // (see https://github.com/dotnet/roslyn/issues/39867).
@@ -2511,7 +2512,7 @@ namespace Microsoft.CodeAnalysis.CSharp
                 return;
             }
 
-            location ??= value.Syntax.GetLocation();
+            location ??= (locationSyntaxOpt ?? value.Syntax).GetLocation();
             var unwrappedValue = SkipReferenceConversions(value);
             if (unwrappedValue.IsSuppressed)
             {
@@ -10286,7 +10287,7 @@ namespace Microsoft.CodeAnalysis.CSharp
                 // Need to report all warnings that apply since the warnings can be suppressed individually.
                 if (reportTopLevelWarnings)
                 {
-                    ReportNullableAssignmentIfNecessary(conversionOperand, targetTypeWithNullability, resultType, useLegacyWarnings, assignmentKind, parameterOpt, getDiagnosticLocation());
+                    ReportNullableAssignmentIfNecessary(conversionOperand, targetTypeWithNullability, resultType, useLegacyWarnings, assignmentKind, parameterOpt, diagnosticLocation, (conversionOpt ?? conversionOperand).Syntax);
                 }
                 if (reportRemainingWarnings && !canConvertNestedNullability)
                 {
