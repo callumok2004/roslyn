@@ -45,6 +45,17 @@ internal sealed class MetadataServiceFactory() : IWorkspaceServiceFactory
 
             try
             {
+                // Files in the SDK packs and the NuGet package cache never change, so they can be read in place
+                // through a mapped view. Anything else may be rebuilt while referenced, so it's still copied.
+                if (properties.Kind == MetadataImageKind.Assembly && ImmutableReferenceLocations.Contains(path))
+                {
+                    var module = ModuleMetadata.CreateFromStream(new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete));
+                    if (module.GetModuleNames().IsEmpty)
+                        return AssemblyMetadata.Create(module).GetReference(documentationProvider, properties.Aliases, properties.EmbedInteropTypes, path);
+
+                    module.Dispose();
+                }
+
                 return MetadataReference.CreateFromFile(path, properties, documentationProvider);
             }
             catch (IOException e)
@@ -52,6 +63,58 @@ internal sealed class MetadataServiceFactory() : IWorkspaceServiceFactory
                 // Store failed references in the cache so that the behavior stays consistent once we observe the failure.
                 return new ThrowingExecutableReference(path, properties, documentationProvider, e);
             }
+        }
+
+        private static class ImmutableReferenceLocations
+        {
+            private static readonly string[] s_roots = GetRoots();
+
+            public static bool Contains(string path)
+            {
+                foreach (var root in s_roots)
+                {
+                    if (path.StartsWith(root, StringComparison.OrdinalIgnoreCase))
+                        return true;
+                }
+
+                return false;
+            }
+
+            private static string[] GetRoots()
+            {
+                var roots = new System.Collections.Generic.List<string>();
+
+                var packages = Environment.GetEnvironmentVariable("NUGET_PACKAGES");
+                if (string.IsNullOrEmpty(packages))
+                {
+                    var profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+                    if (!string.IsNullOrEmpty(profile))
+                        packages = Path.Combine(profile, ".nuget", "packages");
+                }
+
+                if (!string.IsNullOrEmpty(packages))
+                    roots.Add(WithSeparator(packages));
+
+                // The runtime directory is <dotnet>/shared/Microsoft.NETCore.App/<version>/; reference packs live under <dotnet>/packs.
+                var runtime = System.Runtime.InteropServices.RuntimeEnvironment.GetRuntimeDirectory();
+                if (Directory.GetParent(runtime.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar))?.Parent?.Parent is { } dotnet)
+                {
+                    roots.Add(WithSeparator(Path.Combine(dotnet.FullName, "packs")));
+                    roots.Add(WithSeparator(Path.Combine(dotnet.FullName, "shared")));
+                }
+
+                var dotnetRoot = Environment.GetEnvironmentVariable("DOTNET_ROOT");
+                if (!string.IsNullOrEmpty(dotnetRoot))
+                {
+                    roots.Add(WithSeparator(Path.Combine(dotnetRoot, "packs")));
+                    roots.Add(WithSeparator(Path.Combine(dotnetRoot, "shared")));
+                }
+
+                return [.. roots];
+            }
+
+            private static string WithSeparator(string path)
+                => Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
         }
 
         private sealed class ThrowingExecutableReference(string resolvedPath, MetadataReferenceProperties properties, DocumentationProvider documentationProvider, IOException exception)
