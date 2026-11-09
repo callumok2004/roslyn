@@ -342,6 +342,11 @@ namespace Microsoft.CodeAnalysis.CSharp
         {
             _labelsUsed.Add(node.Label);
 
+            if (_usingDeclarations.Count == 0)
+            {
+                return base.VisitGotoStatement(node);
+            }
+
             // check for illegal jumps across using declarations
             var sourceLocation = node.Syntax.Location;
             var sourceStart = sourceLocation.SourceSpan.Start;
