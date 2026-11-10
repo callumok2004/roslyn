@@ -42,6 +42,36 @@ namespace Microsoft.CodeAnalysis.Text
             return new Latin1Text(bytes, encodingOpt, checksum, checksumAlgorithm, embeddedTextBlob);
         }
 
+        /// <summary>
+        /// Creates a <see cref="Latin1Text"/> from decoded chunks when every character fits in a byte, otherwise a <see cref="LargeText"/>.
+        /// </summary>
+        internal static SourceText Create(ImmutableArray<char[]> chunks, Encoding? encodingOpt, ImmutableArray<byte> checksum, SourceHashAlgorithm checksumAlgorithm, ImmutableArray<byte> embeddedTextBlob)
+        {
+            var length = 0;
+            foreach (var chunk in chunks)
+            {
+                foreach (var c in chunk)
+                {
+                    if (c > 'ÿ')
+                        return new LargeText(chunks, encodingOpt, checksum, checksumAlgorithm, embeddedTextBlob);
+                }
+
+                length += chunk.Length;
+            }
+
+            var bytes = new byte[length];
+            var offset = 0;
+            foreach (var chunk in chunks)
+            {
+                for (var i = 0; i < chunk.Length; i++)
+                    bytes[offset + i] = (byte)chunk[i];
+
+                offset += chunk.Length;
+            }
+
+            return new Latin1Text(bytes, encodingOpt, checksum, checksumAlgorithm, embeddedTextBlob);
+        }
+
         public override Encoding? Encoding => _encodingOpt;
 
         public override int Length => _bytes.Length;
