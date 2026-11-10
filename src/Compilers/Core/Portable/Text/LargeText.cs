@@ -83,7 +83,7 @@ namespace Microsoft.CodeAnalysis.Text
                 // We cannot re-encode to obtain checksum and blob as the encoding is not guaranteed to round-trip.
                 var checksum = CalculateChecksum(stream, checksumAlgorithm);
                 embeddedTextBlob = embeddedTextBlob.IsDefault && canBeEmbedded ? EmbeddedText.CreateBlob(stream) : embeddedTextBlob;
-                return new LargeText(chunks, reader.CurrentEncoding, checksum, checksumAlgorithm, embeddedTextBlob);
+                return Latin1Text.Create(chunks, reader.CurrentEncoding, checksum, checksumAlgorithm, embeddedTextBlob);
             }
         }
 
