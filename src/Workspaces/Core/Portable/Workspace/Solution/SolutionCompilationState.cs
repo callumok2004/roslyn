@@ -360,11 +360,55 @@ internal sealed partial class SolutionCompilationState
 
         var generatorDriverInitializationCaches = generatorDriverInitializationCachesBuilder.ToImmutable();
 
-        return Branch(
+        var result = Branch(
             newSolutionState,
             projectIdToTrackerMap: newTrackerMap,
             sourceGeneratorExecutionVersionMap: sourceGeneratorExecutionVersionMap,
             generatorDriverInitializationCaches: generatorDriverInitializationCaches);
+
+        return result.ShareLinkedDocumentContents(projectInfos.SelectManyAsArray(static p => p.Documents.SelectAsArray(static d => d.Id)));
+    }
+
+    /// <summary>
+    /// A file linked into several projects would otherwise be loaded and parsed separately for each one. Point newly
+    /// added documents at the text and tree of an existing document with the same path; the tree is reused when the
+    /// parse would be identical and incrementally reparsed otherwise, exactly as when a linked file is edited.
+    /// </summary>
+    private SolutionCompilationState ShareLinkedDocumentContents(ImmutableArray<DocumentId> addedDocumentIds)
+    {
+        if (addedDocumentIds.IsEmpty)
+            return this;
+
+        var added = new HashSet<DocumentId>(addedDocumentIds);
+        var canonicalByPath = new Dictionary<string, DocumentState>(StringComparer.OrdinalIgnoreCase);
+        using var _ = ArrayBuilder<(DocumentId documentId, DocumentState documentState)>.GetInstance(out var updates);
+
+        foreach (var documentId in addedDocumentIds)
+        {
+            var documentState = SolutionState.GetProjectState(documentId.ProjectId)?.DocumentStates.GetState(documentId);
+            if (documentState is null || !documentState.SupportsSyntaxTree || documentState.FilePath is not { } filePath)
+                continue;
+
+            if (!canonicalByPath.TryGetValue(filePath, out var canonical))
+            {
+                canonical = documentState;
+                foreach (var relatedId in SolutionState.GetRelatedDocumentIds(documentId, includeDifferentLanguages: false))
+                {
+                    if (relatedId != documentId && !added.Contains(relatedId) && SolutionState.GetProjectState(relatedId.ProjectId)?.DocumentStates.GetState(relatedId) is { SupportsSyntaxTree: true } existing)
+                    {
+                        canonical = existing;
+                        break;
+                    }
+                }
+
+                canonicalByPath.Add(filePath, canonical);
+            }
+
+            if (canonical != documentState)
+                updates.Add((documentId, canonical));
+        }
+
+        return updates.Count == 0 ? this : WithDocumentContentsFrom(updates.ToImmutableAndClear(), forceEvenIfTreesWouldDiffer: false);
     }
 
     /// <inheritdoc cref="SolutionState.RemoveProjects"/>
@@ -1784,7 +1828,7 @@ internal sealed partial class SolutionCompilationState
 
         // The documents might be contributing to multiple different projects; split them by project and then we'll
         // process one project at a time.
-        return WithDocumentStatesOfMultipleProjects(
+        var result = WithDocumentStatesOfMultipleProjects(
             documentInfos.GroupBy(d => d.Id.ProjectId).Select(g =>
             {
                 var projectId = g.Key;
@@ -1793,6 +1837,10 @@ internal sealed partial class SolutionCompilationState
                 return (projectId, newDocumentStates: g.SelectAsArray(projectState.CreateDocument<TDocumentState>));
             }),
             GetAddDocumentsTranslationAction);
+
+        return typeof(TDocumentState) == typeof(DocumentState)
+            ? result.ShareLinkedDocumentContents(documentInfos.SelectAsArray(static d => d.Id))
+            : result;
     }
 
     public SolutionCompilationState RemoveDocumentsFromMultipleProjects<T>(ImmutableArray<DocumentId> documentIds)
