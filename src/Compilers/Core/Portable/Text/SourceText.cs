@@ -237,7 +237,7 @@ namespace Microsoft.CodeAnalysis.Text
             // We cannot re-encode to obtain checksum and blob as the encoding is not guaranteed to round-trip.
             var checksum = CalculateChecksum(stream, checksumAlgorithm);
             embeddedTextBlob = embeddedTextBlob.IsDefault && canBeEmbedded ? EmbeddedText.CreateBlob(stream) : embeddedTextBlob;
-            return new StringText(text, encoding, checksum, checksumAlgorithm, embeddedTextBlob);
+            return Latin1Text.Create(text, encoding, checksum, checksumAlgorithm, embeddedTextBlob);
         }
 
         // 1.0 BACKCOMPAT OVERLOAD - DO NOT TOUCH
@@ -296,7 +296,7 @@ namespace Microsoft.CodeAnalysis.Text
             // We cannot re-encode to obtain checksum and blob as the encoding is not guaranteed to round-trip.
             var checksum = CalculateChecksum(buffer, 0, length, checksumAlgorithm);
             var embeddedTextBlob = canBeEmbedded ? EmbeddedText.CreateBlob(new ArraySegment<byte>(buffer, 0, length)) : default(ImmutableArray<byte>);
-            return new StringText(text, encoding, checksum, checksumAlgorithm, embeddedTextBlob);
+            return Latin1Text.Create(text, encoding, checksum, checksumAlgorithm, embeddedTextBlob);
         }
 
         /// <summary>

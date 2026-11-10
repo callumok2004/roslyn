@@ -236,6 +236,7 @@ public class FileTextLoader : TextLoader
 
     private TextAndVersion ShareText(TextAndVersion textAndVersion)
     {
+
         var text = textAndVersion.Text;
         var weak = s_sharedTexts.GetOrAdd(Path, _ => new WeakReference<SourceText>(text));
         if (weak.TryGetTarget(out var shared))
