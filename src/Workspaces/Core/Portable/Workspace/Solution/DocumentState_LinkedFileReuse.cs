@@ -2,6 +2,8 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 // See the LICENSE file in the project root for more information.
 
+using System;
+using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Threading;
 using System.Threading.Tasks;
@@ -222,11 +224,39 @@ internal partial class DocumentState
                 // If the tree contains a #if directive, and the pp-symbol-names are different, then the files
                 // absolutely may be parsed differently, and so they should not be shared.
                 //
-                // TODO(cyrusn): We could potentially be smarter here as well.  We can check what pp-symbols the file
-                // actually uses. (e.g. 'DEBUG'/'NETCORE'/etc.) and see if the project parse options actually differ
-                // for these values.  If not, we could reuse the trees even then.
+                // Directive evaluation only depends on the pp-symbols the file actually references. If every identifier
+                // used in any directive is defined in both projects or in neither, both sides take the same branches and
+                // produce the same tree. C# only: VB pp-constants carry values, not just names.
+                if (languageServices.Language == LanguageNames.CSharp &&
+                    DirectiveSymbolsAgree(siblingRoot, syntaxKinds, ppSymbolsNames1, ppSymbolsNames2))
+                {
+                    Interlocked.Increment(ref s_couldReuseBecauseOfEqualUsedPPNames);
+                    return true;
+                }
+
                 Interlocked.Increment(ref s_couldNotReuse);
                 return false;
+            }
+
+            static bool DirectiveSymbolsAgree(SyntaxNode root, ISyntaxKindsService syntaxKinds, IEnumerable<string> names1, IEnumerable<string> names2)
+            {
+                var set1 = new HashSet<string>(names1, StringComparer.Ordinal);
+                var set2 = new HashSet<string>(names2, StringComparer.Ordinal);
+                foreach (var nodeOrToken in root.DescendantNodesAndTokens(n => n.ContainsDirectives || n.IsPartOfStructuredTrivia(), descendIntoTrivia: true))
+                {
+                    if (!nodeOrToken.IsToken)
+                        continue;
+
+                    var token = nodeOrToken.AsToken();
+                    if (!token.IsPartOfStructuredTrivia() || token.RawKind != syntaxKinds.IdentifierToken)
+                        continue;
+
+                    var name = token.ValueText;
+                    if (set1.Contains(name) != set2.Contains(name))
+                        return false;
+                }
+
+                return true;
             }
         }
 
@@ -280,6 +310,7 @@ internal partial class DocumentState
     // Values just kept around for benchmark tests.
     private static int s_tryReuseSyntaxTree;
     private static int s_couldNotReuse;
+    private static int s_couldReuseBecauseOfEqualUsedPPNames;
     private static int s_couldReuseBecauseOfEqualPPNames;
     private static int s_couldReuseBecauseOfNoDirectives;
     private static int s_couldReuseBecauseOfNoPPDirectives;
