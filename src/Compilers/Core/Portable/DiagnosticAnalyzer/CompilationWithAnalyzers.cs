@@ -812,14 +812,8 @@ namespace Microsoft.CodeAnalysis.Diagnostics
                     {
                         builder.Free();
 
-                        // PERF: The root "_compilation" is reused for single-file compiler analyzer analysis and its event queue
-                        // is never consumed, so drain the events generated while binding to avoid rooting semantic models.
                         if (analysisScope.IsSingleFileAnalysisForCompilerAnalyzer)
                         {
-                            while (compilation.EventQueue!.TryDequeue(out _))
-                            {
-                            }
-
                             // The root compilation's caching semantic model provider is never told a tree is complete in
                             // single-file analysis, so it would keep a fully bound model for every tree ever analyzed. Keep
                             // the most recent tree's model for repeated requests in the same file and release the previous one.
