@@ -32,6 +32,8 @@ namespace Microsoft.CodeAnalysis.Diagnostics
 
         private readonly bool _discardElements;
 
+        public bool IsDiscarding => _discardElements;
+
         public AsyncQueue()
             : this(discardElements: false)
         {
