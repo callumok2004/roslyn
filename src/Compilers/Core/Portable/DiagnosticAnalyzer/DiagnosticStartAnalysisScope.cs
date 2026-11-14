@@ -411,6 +411,10 @@ namespace Microsoft.CodeAnalysis.Diagnostics
             _sessionScope = sessionScope;
         }
 
+        private sealed record MergedActions(AnalyzerActions Compilation, AnalyzerActions Session, AnalyzerActions Merged);
+
+        private MergedActions? _merged;
+
         public override AnalyzerActions GetAnalyzerActions()
         {
             AnalyzerActions compilationActions = base.GetAnalyzerActions();
@@ -426,7 +430,17 @@ namespace Microsoft.CodeAnalysis.Diagnostics
                 return sessionActions;
             }
 
-            return compilationActions.Append(in sessionActions);
+            // PERF: This is called for every symbol and every analyzer during analysis. Reuse the merged actions until
+            // either side registers something new, instead of reallocating every action array on each call.
+            var cached = Volatile.Read(ref _merged);
+            if (cached != null && cached.Compilation.IsSameAs(in compilationActions) && cached.Session.IsSameAs(in sessionActions))
+            {
+                return cached.Merged;
+            }
+
+            var merged = compilationActions.Append(in sessionActions);
+            Volatile.Write(ref _merged, new MergedActions(compilationActions, sessionActions, merged));
+            return merged;
         }
     }
 
@@ -1008,6 +1022,29 @@ namespace Microsoft.CodeAnalysis.Diagnostics
         /// Append analyzer actions from <paramref name="otherActions"/> to actions from this instance.
         /// </summary>
         /// <param name="otherActions">Analyzer actions to append</param>.
+        /// <summary>
+        /// True if both instances hold the same underlying action arrays, so anything derived from one is valid for the other.
+        /// </summary>
+        public readonly bool IsSameAs(in AnalyzerActions other)
+            => _compilationStartActions == other._compilationStartActions &&
+               _compilationEndActions == other._compilationEndActions &&
+               _compilationActions == other._compilationActions &&
+               _syntaxTreeActions == other._syntaxTreeActions &&
+               _additionalFileActions == other._additionalFileActions &&
+               _semanticModelActions == other._semanticModelActions &&
+               _symbolActions == other._symbolActions &&
+               _symbolStartActions == other._symbolStartActions &&
+               _symbolEndActions == other._symbolEndActions &&
+               _codeBlockStartActions == other._codeBlockStartActions &&
+               _codeBlockEndActions == other._codeBlockEndActions &&
+               _codeBlockActions == other._codeBlockActions &&
+               _operationBlockStartActions == other._operationBlockStartActions &&
+               _operationBlockEndActions == other._operationBlockEndActions &&
+               _operationBlockActions == other._operationBlockActions &&
+               _syntaxNodeActions == other._syntaxNodeActions &&
+               _operationActions == other._operationActions &&
+               _concurrent == other._concurrent;
+
         public readonly AnalyzerActions Append(in AnalyzerActions otherActions, bool appendSymbolStartAndSymbolEndActions = true)
         {
             if (otherActions.IsDefault)

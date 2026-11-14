@@ -111,6 +111,13 @@ namespace Microsoft.CodeAnalysis.Diagnostics
         private ConcurrentDictionary<(INamespaceOrTypeSymbol, DiagnosticAnalyzer), IGroupedAnalyzerActions>? _lazyPerSymbolAnalyzerActionsCache;
 
         /// <summary>
+        /// Cache of the actions a member symbol (method, field, property, event) inherits from its containing namespace or type
+        /// for an analyzer. They only depend on the container, so they are computed once per container instead of once per member.
+        /// Entries are evicted together with <see cref="PerSymbolAnalyzerActionsCache"/>.
+        /// </summary>
+        private ConcurrentDictionary<(INamespaceOrTypeSymbol, DiagnosticAnalyzer), IGroupedAnalyzerActions>? _lazyInheritedMemberActionsCache;
+
+        /// <summary>
         /// Cache of additional analyzer actions to be executed per symbol per analyzer, which are registered in symbol start actions.
         /// We cache the tuple:
         ///   1. myActions: analyzer actions registered in the symbol start actions of containing namespace/type, which are to be executed for this symbol
@@ -436,6 +443,7 @@ namespace Microsoft.CodeAnalysis.Diagnostics
                     if (this.AnalyzerActions.SymbolStartActionsCount > 0)
                     {
                         _lazyPerSymbolAnalyzerActionsCache = new ConcurrentDictionary<(INamespaceOrTypeSymbol, DiagnosticAnalyzer), IGroupedAnalyzerActions>();
+                        _lazyInheritedMemberActionsCache = new ConcurrentDictionary<(INamespaceOrTypeSymbol, DiagnosticAnalyzer), IGroupedAnalyzerActions>();
                     }
 
                 }, cancellationToken);
@@ -1707,6 +1715,7 @@ namespace Microsoft.CodeAnalysis.Diagnostics
                 if (symbol is INamespaceOrTypeSymbol namespaceOrType)
                 {
                     PerSymbolAnalyzerActionsCache.TryRemove((namespaceOrType, analyzer), out _);
+                    _lazyInheritedMemberActionsCache?.TryRemove((namespaceOrType, analyzer), out _);
                 }
 
                 await processContainerOnMemberCompletedAsync(symbol.ContainingNamespace, symbol, analyzer).ConfigureAwait(false);
@@ -2220,15 +2229,31 @@ namespace Microsoft.CodeAnalysis.Diagnostics
                         // This is done to ensure that we have executed symbol started actions for the container before our start actions are executed.
                         if (symbol.ContainingSymbol.Kind != symbol.Kind)
                         {
-                            // Don't inherit the symbol start and symbol end actions.
-                            var containerAnalyzerActions = containerActions.AnalyzerActions;
-                            var actions = AnalyzerActions.Empty.Append(in containerAnalyzerActions, appendSymbolStartAndSymbolEndActions: false);
-                            return CreateGroupedActions(analyzer, actions);
+                            // PERF: Members inherit the same actions from a given container, so build them once per container.
+                            if (symbol is not INamespaceOrTypeSymbol &&
+                                symbol.ContainingSymbol is INamespaceOrTypeSymbol container &&
+                                driver._lazyInheritedMemberActionsCache is { } inheritedCache)
+                            {
+                                if (inheritedCache.TryGetValue((container, analyzer), out var cachedInherited))
+                                    return cachedInherited;
+
+                                return inheritedCache.GetOrAdd((container, analyzer), inheritContainerActions(driver, analyzer, containerActions));
+                            }
+
+                            return inheritContainerActions(driver, analyzer, containerActions);
                         }
                     }
                 }
 
                 return EmptyGroupedActions;
+            }
+
+            static IGroupedAnalyzerActions inheritContainerActions(AnalyzerDriver driver, DiagnosticAnalyzer analyzer, IGroupedAnalyzerActions containerActions)
+            {
+                // Don't inherit the symbol start and symbol end actions.
+                var containerAnalyzerActions = containerActions.AnalyzerActions;
+                var actions = AnalyzerActions.Empty.Append(in containerAnalyzerActions, appendSymbolStartAndSymbolEndActions: false);
+                return driver.CreateGroupedActions(analyzer, actions);
             }
 
             static async ValueTask<AnalyzerActions> getSymbolActionsCoreAsync(AnalyzerDriver driver, ISymbol symbol, DiagnosticAnalyzer analyzer, SyntaxTree? filterTree, TextSpan? filterSpan, CancellationToken cancellationToken)
