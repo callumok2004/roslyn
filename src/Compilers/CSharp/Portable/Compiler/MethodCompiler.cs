@@ -1172,7 +1172,7 @@ namespace Microsoft.CodeAnalysis.CSharp
                         bool diagsWritten;
                         actualDiagnostics = new ReadOnlyBindingDiagnostic<AssemblySymbol>(sourceMethod.SetDiagnostics(actualDiagnostics.Diagnostics, out diagsWritten), actualDiagnostics.Dependencies);
 
-                        if (diagsWritten && !methodSymbol.IsImplicitlyDeclared && _compilation.EventQueue != null)
+                        if (diagsWritten && !methodSymbol.IsImplicitlyDeclared && _compilation.EventQueue is { IsDiscarding: false })
                         {
                             // If compilation has a caching semantic model provider, then cache the already-computed bound tree
                             // onto the semantic model and store it on the event.
