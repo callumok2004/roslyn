@@ -160,8 +160,46 @@ internal abstract partial class AbstractPullDiagnosticHandler<TDiagnosticsParams
         using var _3 = PooledHashSet<ProjectOrDocumentId>.GetInstance(out var seenDiagnosticSourceIds);
 
         foreach (var diagnosticSource in orderedSources)
-        {
             seenDiagnosticSourceIds.Add(diagnosticSource.GetId());
+
+        var sourcesByProject = new List<List<IDiagnosticSource>>();
+        var projectIndex = new Dictionary<ProjectId, int>();
+
+        foreach (var diagnosticSource in orderedSources)
+        {
+            var projectId = diagnosticSource.GetProject().Id;
+            if (!projectIndex.TryGetValue(projectId, out var index))
+            {
+                index = sourcesByProject.Count;
+                projectIndex.Add(projectId, index);
+                sourcesByProject.Add([]);
+            }
+
+            sourcesByProject[index].Add(diagnosticSource);
+        }
+
+        if (sourcesByProject.Count <= 1)
+        {
+            foreach (var diagnosticSource in orderedSources)
+                await ProcessSourceAsync(diagnosticSource).ConfigureAwait(false);
+        }
+        else
+        {
+            var options = new ParallelOptions
+            {
+                CancellationToken = cancellationToken,
+                MaxDegreeOfParallelism = Math.Max(1, Environment.ProcessorCount / 2),
+            };
+
+            await Parallel.ForEachAsync(sourcesByProject, options, async (projectSources, _) =>
+            {
+                foreach (var diagnosticSource in projectSources)
+                    await ProcessSourceAsync(diagnosticSource).ConfigureAwait(false);
+            }).ConfigureAwait(false);
+        }
+
+        async Task ProcessSourceAsync(IDiagnosticSource diagnosticSource)
+        {
             var globalStateVersion = _diagnosticRefresher.GlobalStateVersion;
 
             var project = diagnosticSource.GetProject();
