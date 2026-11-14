@@ -39,7 +39,7 @@ internal sealed partial class WorkspacePullDiagnosticsHandler(
                 new WorkspaceFullDocumentDiagnosticReport
                 {
                     Uri = identifier.DocumentUri,
-                    ProjectContext = clientCapabilities.HasVisualStudioLspCapability() ? (identifier as VSTextDocumentIdentifier)?.ProjectContext : null,
+                    ProjectContext = (identifier as VSTextDocumentIdentifier)?.ProjectContext,
                     Items = diagnostics,
                     // The documents provided by workspace reports are never open, so we return null.
                     Version = null,
@@ -56,7 +56,7 @@ internal sealed partial class WorkspacePullDiagnosticsHandler(
                 new WorkspaceFullDocumentDiagnosticReport
                 {
                     Uri = identifier.DocumentUri,
-                    ProjectContext = clientCapabilities.HasVisualStudioLspCapability() ? (identifier as VSTextDocumentIdentifier)?.ProjectContext : null,
+                    ProjectContext = (identifier as VSTextDocumentIdentifier)?.ProjectContext,
                     Items = [],
                     // The documents provided by workspace reports are never open, so we return null.
                     Version = null,
