@@ -1019,10 +1019,6 @@ namespace Microsoft.CodeAnalysis.Diagnostics
         }
 
         /// <summary>
-        /// Append analyzer actions from <paramref name="otherActions"/> to actions from this instance.
-        /// </summary>
-        /// <param name="otherActions">Analyzer actions to append</param>.
-        /// <summary>
         /// True if both instances hold the same underlying action arrays, so anything derived from one is valid for the other.
         /// </summary>
         public readonly bool IsSameAs(in AnalyzerActions other)
@@ -1045,6 +1041,10 @@ namespace Microsoft.CodeAnalysis.Diagnostics
                _operationActions == other._operationActions &&
                _concurrent == other._concurrent;
 
+        /// <summary>
+        /// Append analyzer actions from <paramref name="otherActions"/> to actions from this instance.
+        /// </summary>
+        /// <param name="otherActions">Analyzer actions to append</param>.
         public readonly AnalyzerActions Append(in AnalyzerActions otherActions, bool appendSymbolStartAndSymbolEndActions = true)
         {
             if (otherActions.IsDefault)

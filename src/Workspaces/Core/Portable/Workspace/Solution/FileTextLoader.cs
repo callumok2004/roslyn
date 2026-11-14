@@ -249,7 +249,7 @@ public class FileTextLoader : TextLoader
                 Equals(shared.Encoding, text.Encoding) &&
                 shared.ContentEquals(text))
             {
-                return TextAndVersion.Create(shared, textAndVersion.Version, textAndVersion.FilePath);
+                return TextAndVersion.Create(shared, textAndVersion.Version, Path);
             }
         }
 
