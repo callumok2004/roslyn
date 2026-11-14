@@ -8,6 +8,7 @@ using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.CodeAnalysis;
@@ -568,12 +569,29 @@ internal sealed partial class ProjectState : IComparable<ProjectState>
     {
         private readonly AnalyzerConfigOptionsCache _lazyAnalyzerConfigSet = lazyAnalyzerConfigSet;
 
-        public override GeneratedKind IsGenerated(SyntaxTree tree, CancellationToken cancellationToken)
+        // PERF: The binder asks for these for nearly every node it binds (via nullable context checks), and the analyzer
+        // driver for every diagnostic. The result only depends on the tree's path and this provider's fixed editorconfig
+        // set, so compute it once per tree instead of re-normalizing the path and re-matching every section each call.
+        private sealed class TreeOptionsEntry(AnalyzerConfigData options)
         {
+            public readonly AnalyzerConfigData Options = options;
+            public readonly GeneratedKind GeneratedKind = GeneratedCodeUtilities.GetGeneratedCodeKindFromOptions(options.ConfigOptionsWithoutFallback);
+        }
+
+        private readonly ConditionalWeakTable<SyntaxTree, TreeOptionsEntry> _treeOptions = new();
+
+        private TreeOptionsEntry GetTreeOptions(SyntaxTree tree, CancellationToken cancellationToken)
+        {
+            if (_treeOptions.TryGetValue(tree, out var cached))
+                return cached;
+
             var options = _lazyAnalyzerConfigSet.Lazy
                 .GetValue(cancellationToken).GetOptionsForSourcePath(tree.FilePath);
-            return GeneratedCodeUtilities.GetGeneratedCodeKindFromOptions(options.ConfigOptionsWithoutFallback);
+            return _treeOptions.GetValue(tree, _ => new TreeOptionsEntry(options));
         }
+
+        public override GeneratedKind IsGenerated(SyntaxTree tree, CancellationToken cancellationToken)
+            => GetTreeOptions(tree, cancellationToken).GeneratedKind;
 
         public override bool TryGetDiagnosticValue(SyntaxTree tree, string diagnosticId, CancellationToken cancellationToken, out ReportDiagnostic severity)
         {
@@ -586,9 +604,7 @@ internal sealed partial class ProjectState : IComparable<ProjectState>
                 return false;
             }
 
-            var options = _lazyAnalyzerConfigSet.Lazy
-                .GetValue(cancellationToken).GetOptionsForSourcePath(tree.FilePath);
-            return options.TreeOptions.TryGetValue(diagnosticId, out severity);
+            return GetTreeOptions(tree, cancellationToken).Options.TreeOptions.TryGetValue(diagnosticId, out severity);
         }
 
         public override bool TryGetGlobalDiagnosticValue(string diagnosticId, CancellationToken cancellationToken, out ReportDiagnostic severity)

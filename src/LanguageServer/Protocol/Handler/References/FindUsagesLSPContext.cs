@@ -192,6 +192,16 @@ internal sealed class FindUsagesLSPContext : FindUsagesContext
         bool isWrittenTo,
         CancellationToken cancellationToken)
     {
+        // PERF: Classified text is only sent to clients that support VS extensions. For everyone else, skip classifying
+        // every reference and keep the same filtering ComputeTextAsync applies (metadata references produce no text).
+        if (!_supportsVSExtensions)
+        {
+            if (documentSpan == null && (_id != definitionId || definitionText == null))
+                return null;
+
+            return await ComputeLocationAsync(documentSpan, cancellationToken).ConfigureAwait(false);
+        }
+
         // Getting the text for the Text property. If we somehow can't compute the text, that means we're probably dealing with a metadata
         // reference, and those don't show up in the results list in Roslyn FAR anyway.
         var text = await ComputeTextAsync(definitionId, documentSpan, definitionText, isWrittenTo, cancellationToken).ConfigureAwait(false);
